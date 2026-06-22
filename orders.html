@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>주문 관리 — NextBio 영업앱</title>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<div class="app" id="app" style="display:none">
+  <header class="top">
+    <div class="brand">
+      <a class="homebtn" href="index.html">← 대시보드</a>
+      <div class="logo">📋</div>
+      <div><b id="hd-title">주문 관리</b><small>미확정 → 확정 → (생산·검수) → 출고지시</small></div>
+    </div>
+    <div class="top-actions">
+      <div class="userbox"><span class="who" id="u-name"></span><span class="team" id="u-team"></span></div>
+      <button class="reset" onclick="logout()">로그아웃</button>
+    </div>
+  </header>
+
+  <div class="bar2" id="adminsel-wrap" style="display:none">
+    <span style="font-size:12px;font-weight:700;color:var(--muted)">관리 팀</span>
+    <div class="seg" id="adminsel"></div>
+  </div>
+
+  <nav class="tabs" id="tabs">
+    <button data-t="order" class="on">📝 수주</button>
+    <button data-t="ship">📤 출고지시</button>
+    <button data-t="log">📋 변경이력</button>
+  </nav>
+
+  <section class="panel on" id="p-order">
+    <div class="form" style="margin-bottom:14px">
+      <h3>📝 수주 등록</h3>
+      <div class="sub">새 주문은 <b>‘미확정’</b>으로 들어옵니다. 정리·협의 후 <b>[✅ 확정]</b>하면 생산계획으로 공유됩니다.</div>
+      <div class="row2">
+        <div><label class="fl">거래처 <span class="auto" id="od-team-tag"></span></label><select id="od-partner" onchange="odSuggest()"></select></div>
+        <div><label class="fl">제품</label><select id="od-item" onchange="odSuggest()"></select></div>
+      </div>
+      <div class="row2">
+        <div><label class="fl">수량</label><input type="number" id="od-qty" placeholder="0" min="1" oninput="odAuto()" /></div>
+        <div><label class="fl">납기일</label><input type="date" id="od-due" value="2026-06-30" /></div>
+      </div>
+      <div class="row2">
+        <div><label class="fl">단가 (원) <span class="auto" id="od-price-src">추천</span></label><input type="number" id="od-price" placeholder="비우면 '미정'" oninput="odAuto()" /></div>
+        <div><label class="fl">예상 매출 <span class="auto">자동</span></label><input class="ro" id="od-amt" readonly /></div>
+      </div>
+      <button class="btn blue" onclick="submitOrder()">수주 등록</button>
+      <div class="ok-msg" id="od-ok"></div>
+    </div>
+    <div class="bar2">
+      <div class="seg" id="ord-seg">
+        <button data-f="all" class="on">전체</button><button data-f="미확정">미확정</button>
+        <button data-f="확정">확정</button><button data-f="생산완료">생산완료</button>
+        <button data-f="출고준비완료">출고준비</button><button data-f="출고">출고</button>
+      </div>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>수주번호</th><th>거래처</th><th>품목</th><th class="num">수량</th>
+        <th class="num hide-sm">생산완료</th><th class="hide-sm">납기일</th><th class="num hide-sm">예상매출</th><th>상태</th><th></th></tr></thead>
+      <tbody id="order-body"></tbody>
+    </table></div>
+    <div class="note">진행 단계: <b>미확정→확정→(생산팀)생산완료→(품질팀)검수완료→출고준비완료→출고지시→출고완료</b>. ① 미확정 자유수정 ② 확정 후 수정은 <b>생산팀 협의 필수</b> ③ 출고지시는 <b>출고준비완료</b>에서만.</div>
+  </section>
+
+  <section class="panel" id="p-ship">
+    <div class="cards" id="ship-cards"></div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>출고지시번호</th><th>거래처</th><th>배송지 / 비고</th>
+        <th class="num">출고수량</th><th class="num">유상샘플</th><th class="num">무상샘플</th><th class="num hide-sm">매출</th><th>상태</th></tr></thead>
+      <tbody id="ship-body"></tbody>
+    </table></div>
+    <div class="note"><b>분할출고</b>: 한 수주를 여러 배송지·여러 번에 나눠 출고할 수 있고, 남은 수량은 나중에 ‘추가출고’로 재지시합니다. <b>샘플(무상)</b>은 매출에 안 잡히고, <b>유상분만 단가×수량으로 매출</b>에 연결됩니다. 물류팀은 위 표에서 <b>유상 N + 샘플 N</b>을 보고 출고합니다.</div>
+  </section>
+
+  <section class="panel" id="p-log"><div id="log-body"></div></section>
+</div>
+
+<!-- 수주 수정 모달 -->
+<div class="modal-bg" id="omodal"><div class="modal">
+  <h3>수주 수정</h3>
+  <div id="om-info" style="font-size:13px;color:var(--muted);margin-bottom:12px"></div>
+  <div id="om-warn" class="readonly-ban" style="display:none">⚠ <b>확정</b>된 수주입니다. 수정하려면 <b>생산팀 협의</b>가 필요하며, 내용이 이력에 기록됩니다.</div>
+  <label class="fl">수량</label><input type="number" id="om-qty" />
+  <label class="fl">납기일</label><input type="date" id="om-due" />
+  <label class="fl">단가 (원)</label><input type="number" id="om-price" />
+  <label class="fl">상태</label><select id="om-status"><option>미확정</option><option>확정</option><option>생산완료</option><option>출고준비완료</option><option>출고지시</option><option>출고완료</option><option>취소</option></select>
+  <label class="fl" id="om-reason-lb">수정 사유</label><input type="text" id="om-reason" placeholder="예: 단가 변동, 수량 변경, 납기 연기" />
+  <div style="display:flex;gap:8px;margin-top:16px"><button class="btn ghost" style="margin:0" onclick="closeO()">취소</button><button class="btn" style="margin:0" onclick="saveO()">수정 저장</button></div>
+</div></div>
+
+<!-- 출고지시 모달 -->
+<div class="modal-bg" id="smodal"><div class="modal" style="max-width:560px">
+  <h3>📤 출고지시 생성 <span style="font-size:11px;color:var(--muted);font-weight:600">여러 배송지·샘플 한 번에</span></h3>
+  <div id="sm-info" style="font-size:13px;color:var(--muted);margin-bottom:12px"></div>
+  <div class="row2">
+    <div><label class="fl">출고 단가(유상) <span class="auto">확정</span></label><input type="number" id="sm-price" oninput="smCalc()" /></div>
+    <div><label class="fl">출고지시일</label><input type="date" id="sm-date" value="2026-06-19" /></div>
+  </div>
+  <label class="fl" style="margin-top:14px">배송지별 출고 내역 <span class="auto">유상 · 유상샘플(택배) · 무상샘플</span></label>
+  <div id="sm-lines"></div>
+  <button onclick="smAddLine()" style="width:100%;border:1px dashed var(--brand);background:none;color:var(--brand);font-weight:800;font-size:13px;padding:9px;border-radius:9px;cursor:pointer;margin-top:2px">＋ 배송지 추가</button>
+  <div class="hint" id="sm-rem" style="margin-top:10px"></div>
+  <div style="display:flex;gap:8px;margin-top:16px"><button class="btn ghost" style="margin:0" onclick="closeS()">취소</button><button class="btn blue" style="margin:0" onclick="saveS()">출고지시 생성</button></div>
+</div></div>
+
+<script src="app.js"></script>
+<script>
+const U=currentUser();
+if(!U){ location.replace('login.html'); }
+else {
+  document.getElementById('app').style.display='block';
+  document.getElementById('u-name').textContent=U.name;
+  document.getElementById('u-team').textContent=U.team+' · '+U.role;
+  let TEAM = isAdmin(U) ? (new URLSearchParams(location.search).get('team')||'영업1팀') : U.team;
+  if(isAdmin(U)){
+    document.getElementById('adminsel-wrap').style.display='flex';
+    document.getElementById('adminsel').innerHTML=TEAMS.map(t=>`<button data-t="${t}" class="${t===TEAM?'on':''}">${t}</button>`).join('');
+    document.getElementById('adminsel').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+      document.querySelectorAll('#adminsel button').forEach(x=>x.classList.remove('on'));b.classList.add('on');TEAM=b.dataset.t;initTeam();renderAll();});
+  }
+  const EDIT = ()=>canEdit(U,TEAM);
+
+  function pname(c){ return PRODUCTS[c]?PRODUCTS[c].name:c; }
+  function punit(c){ return PRODUCTS[c]?PRODUCTS[c].unit:''; }
+
+  function initTeam(){
+    document.getElementById('hd-title').textContent='주문 관리 ('+TEAM+')';
+    document.getElementById('od-team-tag').textContent=TEAM;
+    document.getElementById('od-partner').innerHTML=(TEAM_CUSTOMERS[TEAM]||[]).map(c=>`<option>${c}</option>`).join('');
+    document.getElementById('od-item').innerHTML=Object.keys(PRODUCTS).map(c=>`<option value="${c}">${PRODUCTS[c].name} (${c})</option>`).join('');
+    odSuggest();
+  }
+
+  /* 수주 */
+  function odSuggest(){ const p=document.getElementById('od-partner').value,c=document.getElementById('od-item').value;
+    if(p&&c){const s=suggestPrice(p,c);document.getElementById('od-price').value=s.price||'';document.getElementById('od-price-src').textContent=s.src;} odAuto(); }
+  function odAuto(){ const q=Number(document.getElementById('od-qty').value)||0,pr=Number(document.getElementById('od-price').value)||0;
+    document.getElementById('od-amt').value=pr?('₩ '+won(q*pr)):'미정 (출고 시 결정)'; }
+  window.odSuggest=odSuggest; window.odAuto=odAuto;
+  function submitOrder(){ if(!EDIT()){alert('이 팀 수주를 등록할 권한이 없습니다.');return;}
+    const partner=document.getElementById('od-partner').value,item=document.getElementById('od-item').value,
+      qty=Number(document.getElementById('od-qty').value),due=document.getElementById('od-due').value,price=Number(document.getElementById('od-price').value)||0;
+    if(!partner||!item||!qty||qty<=0){alert('거래처·제품·수량을 확인해 주세요.');return;}
+    const o=addOrder(TEAM,partner,item,qty,due,price);
+    const ok=document.getElementById('od-ok');ok.style.display='block';ok.textContent=`✓ ${o.id} 등록(미확정) — ${pname(item)} ${won(qty)}.`;
+    document.getElementById('od-qty').value='';odSuggest();renderOrders();renderLog();setTimeout(()=>ok.style.display='none',4000); }
+  window.submitOrder=submitOrder;
+
+  let ordFilter='all';
+  function passF(o){ if(ordFilter==='all')return true; if(ordFilter==='확정')return o.status==='확정'; if(ordFilter==='출고')return ['출고지시','출고완료','부분출고'].includes(o.status); return o.status===ordFilter; }
+  function renderOrders(){
+    document.getElementById('order-body').innerHTML=[...DB.orders].reverse().filter(o=>o.team===TEAM).filter(passF).map(o=>{
+      const edited=o.log.filter(l=>l.txt.startsWith('수정')).length>0; let act='';
+      if(o.status!=='출고완료'&&o.status!=='취소') act+=`<button class="edit-btn" onclick="openO('${o.id}')">✏ 수정</button>`;
+      if(o.status==='미확정') act+=` <button class="edit-btn" style="border-color:var(--green);color:var(--green)" onclick="doConfirm('${o.id}')">✅ 확정</button>`;
+      else if(o.status==='출고준비완료'||o.status==='부분출고') act+=` <button class="edit-btn" style="border-color:var(--brand);color:var(--brand)" onclick="openS('${o.id}')">📤 ${o.status==='부분출고'?'추가출고':'출고지시'}</button>`;
+      else if(o.status==='확정') act+=` <span style="font-size:11px;color:var(--muted)">생산 대기</span>`;
+      else if(o.status==='생산완료') act+=` <span style="font-size:11px;color:var(--muted)">검수 대기</span>`;
+      const shipped=shippedOf(o.id);
+      return `<tr>
+        <td class="code">${o.id}${edited?' <span class="pill p-warn" style="font-size:9px">수정됨</span>':''}</td>
+        <td>${o.partner}</td><td class="nm"><b>${pname(o.item)}</b></td>
+        <td class="num qty">${won(o.qty)}<span class="unit">${punit(o.item)}</span></td>
+        <td class="num hide-sm">${o.producedQty?won(o.producedQty)+(shipped>0?`<div style="font-size:10.5px;color:var(--muted)">출고 ${won(shipped)}</div>`:''):'—'}</td>
+        <td class="hide-sm">${o.due}</td>
+        <td class="num hide-sm">${o.price?('₩ '+won(o.qty*o.price)+'<div style="font-size:10.5px;color:var(--muted)">단가 '+won(o.price)+'</div>'):'<span class="pill p-warn" style="font-size:10px">단가 미정</span>'}</td>
+        <td><span class="mt ${OSTAT[o.status]||'t-adj'}">${o.status}</span></td>
+        <td style="white-space:nowrap">${act}</td></tr>`;
+    }).join('') || `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">해당 수주가 없습니다.</td></tr>`;
+  }
+  function doConfirm(id){ if(!EDIT()){alert('권한이 없습니다.');return;} const o=DB.orders.find(x=>x.id===id);
+    if(!confirm(`${id}\n${o.partner} · ${pname(o.item)} ${won(o.qty)}\n\n확정하면 생산계획으로 공유되고, 이후 수정은 생산팀 협의가 필요합니다. 확정할까요?`))return;
+    confirmOrder(id);renderOrders();renderLog(); }
+  window.doConfirm=doConfirm;
+
+  /* 수정 모달 */
+  let oid=null,oNeed=false;
+  function openO(id){ if(!EDIT()){alert('권한이 없습니다.');return;} oid=id; const o=DB.orders.find(x=>x.id===id);
+    oNeed=(o.status!=='미확정'&&o.status!=='취소');
+    document.getElementById('om-info').innerHTML=`<b>${o.id}</b> · ${o.team} · ${o.partner} · ${pname(o.item)}`;
+    document.getElementById('om-warn').style.display=oNeed?'block':'none';
+    document.getElementById('om-reason-lb').innerHTML=oNeed?'생산팀 협의 내용 <span style="color:var(--bad)">* 필수</span>':'수정 사유';
+    document.getElementById('om-qty').value=o.qty;document.getElementById('om-due').value=o.due;
+    document.getElementById('om-price').value=o.price;document.getElementById('om-status').value=o.status;document.getElementById('om-reason').value='';
+    document.getElementById('omodal').classList.add('on'); }
+  function closeO(){document.getElementById('omodal').classList.remove('on');oid=null;}
+  function saveO(){ let reason=document.getElementById('om-reason').value.trim();
+    if(oNeed){ if(!reason){alert('확정된 수주입니다. 생산팀 협의 내용을 입력해야 수정할 수 있습니다.');return;} reason='[생산팀 협의] '+reason; }
+    editOrder(oid,Number(document.getElementById('om-qty').value),document.getElementById('om-due').value,document.getElementById('om-status').value,Number(document.getElementById('om-price').value)||0,reason);
+    closeO();renderOrders();renderLog(); }
+  window.openO=openO;window.closeO=closeO;window.saveO=saveO;
+
+  /* 출고지시 */
+  let sid=null, smLines=[];
+  function smAddrOpts(sel){ const o=DB.orders.find(x=>x.id===sid); const addrs=ADDRESSES[o.partner]||[{code:'',name:'(배송지 미등록)'}];
+    return addrs.map(a=>`<option ${a.name===sel?'selected':''}>${a.name}</option>`).join(''); }
+  function lt(l){ return (Number(l.qty)||0)+(Number(l.paidSample)||0)+(Number(l.freeSample)||0); }
+  function smRenderLines(){
+    const tlab='font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px';
+    document.getElementById('sm-lines').innerHTML=smLines.map((l,i)=>`
+      <div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:12px;color:var(--muted)">배송지 ${i+1}</b>
+          ${smLines.length>1?`<button onclick="smDelLine(${i})" style="border:0;background:none;color:var(--bad);cursor:pointer;font-weight:800;font-size:16px;line-height:1">×</button>`:''}</div>
+        <select onchange="smSet(${i},'addr',this.value)">${smAddrOpts(l.addr)}</select>
+        <div style="display:flex;gap:6px;margin-top:7px">
+          <div style="flex:1"><div style="${tlab}">출고수량(유상)</div><input type="number" min="0" placeholder="0" value="${l.qty||''}" oninput="smSet(${i},'qty',this.value)" /></div>
+          <div style="flex:1"><div style="${tlab}">＋유상샘플</div><input type="number" min="0" placeholder="0" value="${l.paidSample||''}" oninput="smSet(${i},'paidSample',this.value)" /></div>
+          <div style="flex:1"><div style="${tlab}">＋무상샘플</div><input type="number" min="0" placeholder="0" value="${l.freeSample||''}" oninput="smSet(${i},'freeSample',this.value)" /></div>
+        </div>
+        <input type="text" placeholder="비고 (예: 담당자, 택배사)" value="${l.memo||''}" oninput="smSet(${i},'memo',this.value)" style="margin-top:6px" />
+      </div>`).join('');
+  }
+  function openS(id){ if(!EDIT()){alert('권한이 없습니다.');return;} sid=id; const o=DB.orders.find(x=>x.id===id);
+    const rem=remainingOf(o);
+    document.getElementById('sm-info').innerHTML=`수주 <b>${o.id}</b> · ${o.partner} · ${pname(o.item)}<br/>생산완료 <b>${won(o.producedQty)}</b> · 출고누계 ${won(shippedOf(o.id))} · <b style="color:var(--brand)">잔여 ${won(Math.max(0,rem))}</b>`;
+    document.getElementById('sm-price').value=o.price||(suggestPrice(o.partner,o.item).price||'');
+    const addrs=ADDRESSES[o.partner]||[{code:'',name:'(배송지 미등록)'}];
+    smLines=[{addr:addrs[0].name,qty:rem>0?rem:0,paidSample:0,freeSample:0,memo:''}];
+    smRenderLines(); smCalc(); document.getElementById('smodal').classList.add('on'); }
+  function smAddLine(){ const o=DB.orders.find(x=>x.id===sid); const addrs=ADDRESSES[o.partner]||[{name:''}];
+    smLines.push({addr:addrs[0].name,qty:0,paidSample:0,freeSample:0,memo:''}); smRenderLines(); smCalc(); }
+  function smDelLine(i){ smLines.splice(i,1); smRenderLines(); smCalc(); }
+  function smSet(i,f,v){ smLines[i][f]=(f==='memo'||f==='addr')?v:(Number(v)||0); smCalc(); }
+  function smCalc(){ const pr=Number(document.getElementById('sm-price').value)||0;
+    const normal=sumField(smLines,'qty'), psample=sumField(smLines,'paidSample'), free=sumField(smLines,'freeSample');
+    const total=normal+psample+free, paid=normal+psample;
+    const o=DB.orders.find(x=>x.id===sid); const rem=o?remainingOf(o):0;
+    document.getElementById('sm-rem').innerHTML=`합계 <b>${won(total)}</b> = 유상 ${won(normal)} + 유상샘플 ${won(psample)} + 무상샘플 ${won(free)} · 예상매출 <b>₩${won(paid*pr)}</b><br/>잔여 ${won(Math.max(0,rem))}${total>rem?' <span style="color:var(--bad);font-weight:700">⚠ 잔여 초과</span>':''}`; }
+  function closeS(){document.getElementById('smodal').classList.remove('on');sid=null;}
+  function saveS(){ const price=Number(document.getElementById('sm-price').value)||0;
+    const valid=smLines.filter(l=>lt(l)>0); if(!valid.length){alert('출고수량 또는 샘플 수량을 입력하세요.');return;}
+    const o=DB.orders.find(x=>x.id===sid); const rem=remainingOf(o); const total=valid.reduce((a,l)=>a+lt(l),0);
+    if(total>rem && !confirm(`출고 합계(${won(total)})가 잔여(${won(rem)})보다 많습니다. 진행할까요?`))return;
+    const so=addShipOrder(sid,valid,price,document.getElementById('sm-date').value);
+    if(!so){alert('출고지시는 ‘출고준비완료/부분출고’ 상태에서만 가능합니다.');return;}
+    closeS();renderOrders();renderShip();renderLog();document.querySelector('[data-t=ship]').click();
+    const o2=DB.orders.find(x=>x.id===so.orderId);
+    alert(`✓ ${so.id} 생성 (배송지 ${valid.length}곳) → ${o2.status==='부분출고'?'잔여 '+won(remainingOf(o2))+' 남음':'전량 출고지시 완료'}`); }
+  window.openS=openS;window.closeS=closeS;window.saveS=saveS;window.smCalc=smCalc;window.smAddLine=smAddLine;window.smDelLine=smDelLine;window.smSet=smSet;
+
+  function renderShip(){
+    const mine=DB.shipOrders.filter(s=>s.team===TEAM);
+    const ts=teamSummary(TEAM);
+    const tNormal=mine.reduce((a,s)=>a+sumField(s.lines,'qty'),0);
+    const tPaidS=mine.reduce((a,s)=>a+sumField(s.lines,'paidSample'),0);
+    const tFreeS=mine.reduce((a,s)=>a+sumField(s.lines,'freeSample'),0);
+    const revTot=mine.reduce((a,s)=>a+(Number(s.amount)||0),0);
+    document.getElementById('ship-cards').innerHTML=`
+      <div class="card"><div class="lab">출고지시 매출</div><div class="val">₩${eok(revTot)}</div><div class="foot">${mine.length}건</div></div>
+      <div class="card"><div class="lab">📦 정상 출고(유상)</div><div class="val">${won(tNormal)}</div><div class="foot">개</div></div>
+      <div class="card warn"><div class="lab">🎁 샘플(택배 별도)</div><div class="val">${won(tPaidS+tFreeS)}</div><div class="foot">유상 ${won(tPaidS)} · 무상 ${won(tFreeS)}</div></div>
+      <div class="card"><div class="lab">✅ 출고지시 가능</div><div class="val">${ts.출고준비완료+ts.부분출고} 건</div><div class="foot">출고준비·부분출고</div></div>`;
+    const rows=[]; [...mine].reverse().forEach(s=>(s.lines||[]).forEach((l,li)=>rows.push({s,l,li})));
+    document.getElementById('ship-body').innerHTML=rows.map(({s,l,li})=>`<tr>
+      <td class="code">${li===0?s.id:''}</td>
+      <td>${li===0?s.partner:''}</td>
+      <td class="nm"><b>${l.addr}</b>${l.memo?`<span>${l.memo}</span>`:''}</td>
+      <td class="num qty">${won(l.qty)}<span class="unit">${punit(s.item)}</span></td>
+      <td class="num">${l.paidSample?'<b style="color:var(--brand)">'+won(l.paidSample)+'</b>':'—'}</td>
+      <td class="num">${l.freeSample?'<b style="color:var(--accent)">'+won(l.freeSample)+'</b>':'—'}</td>
+      <td class="num hide-sm">₩${won((l.qty+l.paidSample)*s.price)}</td>
+      <td>${li===0?`<span class="mt ${s.status==='출고완료'?'t-in':'t-out'}">${s.status}</span>`:''}</td></tr>`).join('')
+      || `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">출고지시가 없습니다.</td></tr>`;
+  }
+  function renderLog(){
+    const rows=[];
+    DB.orders.filter(o=>o.team===TEAM).forEach(o=>o.log.forEach(l=>rows.push({k:'수주',id:o.id,...l})));
+    DB.shipOrders.filter(s=>s.team===TEAM).forEach(s=>s.log.forEach(l=>rows.push({k:'출고지시',id:s.id,...l})));
+    rows.sort((a,b)=>a.at<b.at?1:-1);
+    document.getElementById('log-body').innerHTML=rows.map(r=>`<div class="hist-item"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div><span class="mt ${r.k==='수주'?'t-prod':'t-out'}">${r.k}</span> <b class="code">${r.id}</b><div style="font-size:12.5px;margin-top:4px">${r.txt}</div></div>
+      <div style="text-align:right;font-size:11.5px;color:var(--muted)">${r.at}<br/>${r.who}</div></div></div>`).join('')||'<div class="note">이력이 없습니다.</div>';
+  }
+  function renderAll(){ renderOrders(); renderShip(); renderLog(); }
+
+  document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+    document.querySelectorAll('#tabs button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));document.getElementById('p-'+b.dataset.t).classList.add('on');});
+  document.getElementById('ord-seg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+    document.querySelectorAll('#ord-seg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');ordFilter=b.dataset.f;renderOrders();});
+  document.getElementById('omodal').addEventListener('click',e=>{if(e.target.id==='omodal')closeO();});
+  document.getElementById('smodal').addEventListener('click',e=>{if(e.target.id==='smodal')closeS();});
+
+  initTeam(); renderAll();
+}
+</script>
+</body>
+</html>

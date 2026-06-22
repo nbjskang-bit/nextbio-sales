@@ -1,0 +1,6 @@
+.vercel
+.DS_Store
+*.log
+node_modules
+# 비밀키/환경변수는 절대 커밋하지 않음
+.env*

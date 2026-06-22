@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>영업 대시보드 — NextBio</title>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<div class="app" id="app" style="display:none">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">📊</div>
+      <div><b>영업 대시보드</b><small id="hd-sub"></small></div>
+    </div>
+    <div class="top-actions">
+      <div class="userbox"><span class="who" id="u-name"></span><span class="team" id="u-team"></span></div>
+      <a class="homebtn" href="orders.html" id="orders-link">📋 주문 관리</a>
+      <button class="reset" onclick="logout()">로그아웃</button>
+    </div>
+  </header>
+
+  <div class="hub-hello">
+    <h1 id="hello"></h1>
+    <p>오늘 <b id="today"></b> 기준 · 영업 실적 요약</p>
+  </div>
+
+  <div class="bar2" id="teamsel-wrap" style="display:none">
+    <span style="font-size:12px;font-weight:700;color:var(--muted)">팀 선택</span>
+    <div class="seg" id="teamsel"></div>
+  </div>
+
+  <div class="kpi-grid" id="kpis"></div>
+
+  <div class="panelbox">
+    <h3>📈 월별 매출 <small>2025 vs 2026 (1~6월)</small></h3>
+    <div class="chart" id="chart"></div>
+    <div class="legend"><span><i style="background:#cfd6df"></i>2025년</span><span><i style="background:var(--brand)"></i>2026년</span></div>
+  </div>
+
+  <div class="split">
+    <div class="panelbox"><h3>🏆 거래처 TOP <small>2026 누적</small></h3><ul class="rank" id="top-partner"></ul></div>
+    <div class="panelbox"><h3>📦 제품 TOP <small>2026 누적</small></h3><ul class="rank" id="top-item"></ul></div>
+  </div>
+
+  <a class="cta" href="orders.html">📋 우리 팀 주문 관리로 이동 →</a>
+  <div class="note">※ 매출 숫자는 데모용 샘플입니다. 실제로는 출고완료된 주문이 자동으로 집계됩니다. 생산·품질·재고 연동은 다음 단계입니다.</div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const U=currentUser();
+if(!U){ location.replace('login.html'); }
+else {
+  document.getElementById('app').style.display='block';
+  document.getElementById('u-name').textContent=U.name;
+  document.getElementById('u-team').textContent=U.team+' · '+U.role;
+  document.getElementById('hello').textContent=U.name+'님, 안녕하세요 👋';
+  document.getElementById('today').textContent=fmt(TODAY);
+  const teams=visibleTeams(U);
+  // 관리자면 팀 선택(전체+각팀), 멤버면 자기팀 고정
+  let sel = isAdmin(U)?'전체':U.team;
+  if(isAdmin(U)){
+    document.getElementById('teamsel-wrap').style.display='flex';
+    const opts=['전체',...TEAMS];
+    document.getElementById('teamsel').innerHTML=opts.map((t,i)=>`<button data-t="${t}" class="${i===0?'on':''}">${t}</button>`).join('');
+    document.getElementById('teamsel').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+      document.querySelectorAll('#teamsel button').forEach(x=>x.classList.remove('on'));b.classList.add('on');sel=b.dataset.t;render();});
+  }
+  document.getElementById('hd-sub').textContent = isAdmin(U)?'전사 영업 현황':U.team+' 현황';
+
+  function money(n){ return '₩'+eok(n); }
+  function render(){
+    const today=kpiToday(sel), month=kpiMonth(sel);
+    const lastJun=sumIf(sel,s=>s.date.slice(0,7)==='2025-06');
+    const ytd=kpiYTD(sel,2026,6), lastYtd=kpiYTD(sel,2025,6);
+    const yoy = lastYtd? Math.round((ytd-lastYtd)/lastYtd*100):0;
+    const mDelta = lastJun? Math.round((month-lastJun)/lastJun*100):0;
+    document.getElementById('kpis').innerHTML=`
+      <div class="kpi"><div class="lab">오늘 매출</div><div class="val">${money(today)}</div><div class="foot">${fmt(TODAY)}</div></div>
+      <div class="kpi"><div class="lab">이번 달 (6월)</div><div class="val">${money(month)}</div><div class="delta ${mDelta>=0?'up':'down'}">${mDelta>=0?'▲':'▼'} ${Math.abs(mDelta)}% <span style="color:var(--muted);font-weight:600">vs 작년 6월</span></div></div>
+      <div class="kpi hl"><div class="lab">올해 누적 (1~6월)</div><div class="val">${money(ytd)}</div><div class="foot">작년 동기 ${money(lastYtd)}</div></div>
+      <div class="kpi"><div class="lab">전년 동기 대비</div><div class="val ${yoy>=0?'':''}" style="color:${yoy>=0?'var(--green)':'var(--bad)'}">${yoy>=0?'+':''}${yoy}%</div><div class="delta ${yoy>=0?'up':'down'}">${yoy>=0?'▲ 성장':'▼ 감소'}</div></div>`;
+    // 차트
+    const p=monthlyPair(sel); const max=Math.max(...p.y2025,...p.y2026,1);
+    document.getElementById('chart').innerHTML=p.labels.map((lb,i)=>`
+      <div class="cgroup"><div class="cbars">
+        <div class="cbar y1" style="height:${Math.max(2,p.y2025[i]/max*100)}%"><span class="cval">${eok(p.y2025[i])}</span></div>
+        <div class="cbar y2" style="height:${Math.max(2,p.y2026[i]/max*100)}%"><span class="cval">${eok(p.y2026[i])}</span></div>
+      </div><div class="cmonth">${lb}</div></div>`).join('');
+    // TOP
+    const tp=topBy(sel,'partner'), ti=topBy(sel,'item');
+    const maxp=Math.max(...tp.map(x=>x.amt),1), maxi=Math.max(...ti.map(x=>x.amt),1);
+    document.getElementById('top-partner').innerHTML=tp.map(x=>`<li><div style="flex:1"><div class="nm">${x.name}</div><div class="bar"><i style="width:${x.amt/maxp*100}%"></i></div></div><span class="amt">${money(x.amt)}</span></li>`).join('')||'<li>데이터 없음</li>';
+    document.getElementById('top-item').innerHTML=ti.map(x=>`<li><div style="flex:1"><div class="nm">${x.name}</div><div class="bar"><i style="width:${x.amt/maxi*100}%"></i></div></div><span class="amt">${money(x.amt)}</span></li>`).join('')||'<li>데이터 없음</li>';
+  }
+  render();
+}
+</script>
+</body>
+</html>
